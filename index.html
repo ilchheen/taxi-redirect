@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Open taxi app</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  a { display: block; padding: 18px 32px; border-radius: 14px; background: #2ecc71; color: #000;
+      font-size: 20px; font-weight: 600; text-decoration: none; }
+</style>
+</head>
+<body>
+<a id="open" href="#">Open</a>
+<script>
+  // The bot puts the target app link after "#", so the route never reaches the server.
+  // Only Android intent links for the known taxi apps are allowed, so this page can't be used as an open redirect.
+  const params = new URLSearchParams(location.hash.slice(1));
+  const target = params.get("u") || "";
+  const appName = params.get("n") || "app";
+  const button = document.getElementById("open");
+  if (/^intent:\/\/[^#]*#Intent;scheme=(bolt|opti);package=(ee\.mtakso\.client|ua\.otaxi\.client);end$/.test(target)) {
+    button.href = target;
+    button.textContent = "Open " + appName;
+    location.replace(target);
+  } else {
+    button.textContent = "Invalid link";
+  }
+</script>
+</body>
+</html>
