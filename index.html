@@ -107,6 +107,7 @@
     <a class="app uber off" data-app="uber">Uber</a>
     <a class="app opti off" data-app="opti">Opti</a>
   </section>
+  <button class="btn" id="share" hidden>🔗 Share route</button>
 </main>
 
 <div id="map-view" hidden>
@@ -233,24 +234,63 @@ function addFavorite(name, point) {
   saveFavorites(items);
 }
 
-// One-time import: "#import=<base64url JSON>". The part after "#" never leaves the phone.
-function importFromHash() {
-  const match = location.hash.match(/^#import=([A-Za-z0-9_-]+)$/);
+// ---------- Links to this page ----------
+// Data goes after "#" as base64url JSON, so it never reaches the server.
+function encodeHashJson(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function decodeHashJson(text) {
+  const bytes = Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+const isPoint = p => p && Number.isFinite(p.lat) && Number.isFinite(p.lng);
+const cleanPoint = p => ({ lat: p.lat, lng: p.lng, label: String(p.label || `${p.lat}, ${p.lng}`).slice(0, 200) });
+
+// "#import=..." adds favorites (one-time move from the bot); "#route=..." opens a route shared from another phone.
+function readHash() {
+  const match = location.hash.match(/^#(import|route)=([A-Za-z0-9_-]+)$/);
   if (!match) return;
   history.replaceState(null, "", location.pathname);
   try {
-    const bytes = Uint8Array.from(atob(match[1].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
-    const imported = JSON.parse(new TextDecoder().decode(bytes))
-      .filter(f => typeof f.name === "string" && Number.isFinite(f.lat) && Number.isFinite(f.lng));
-    imported.forEach(f => addFavorite(f.name, { lat: f.lat, lng: f.lng, label: String(f.label || f.name) }));
-    toast(`Imported ${imported.length} favorites`);
+    const data = decodeHashJson(match[2]);
+    if (match[1] === "import") {
+      const imported = data.filter(f => typeof f.name === "string" && isPoint(f));
+      imported.forEach(f => addFavorite(f.name, cleanPoint(f)));
+      toast(`Imported ${imported.length} favorites`);
+    } else if (isPoint(data.from) && isPoint(data.to)) {
+      route.from = cleanPoint(data.from);
+      route.to = cleanPoint(data.to);
+      sharedRouteOpened = true;
+    }
   } catch {
-    toast("Import link is broken");
+    toast("This link is broken");
+  }
+}
+
+async function shareRoute() {
+  const url = `${location.origin}${location.pathname}#route=${encodeHashJson({ from: route.from, to: route.to })}`;
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Taxi route", text: `🅰 ${route.from.label}\n🅱 ${route.to.label}`, url });
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied");
+  } catch {
+    prompt("Copy the link:", url);
   }
 }
 
 // ---------- UI state ----------
 const route = { from: null, to: null };
+let sharedRouteOpened = false;
 let active = "from";
 let editingFavorites = false;
 const $ = id => document.getElementById(id);
@@ -313,6 +353,7 @@ function render() {
     if (ready) link.href = APP_LINKS[link.dataset.app](route.from, route.to);
     else link.removeAttribute("href");
   }
+  $("share").hidden = !ready;
 }
 
 let toastTimer;
@@ -461,10 +502,12 @@ $("map-cancel").onclick = () => history.back();
 $("map-locate").onclick = centerMapOnMe;
 $("map-ok").onclick = chooseMapPoint;
 $("edit-favorites").onclick = () => { editingFavorites = !editingFavorites; render(); };
+$("share").onclick = shareRoute;
 window.addEventListener("popstate", () => { if (!$("map-view").hidden) closeMap(); });
 
-importFromHash();
+readHash();
 render();
+if (sharedRouteOpened) toast("Shared route — tap a taxi app");
 // The usual trip starts where you are; fill A from GPS if location access was already granted.
 navigator.permissions?.query({ name: "geolocation" })
   .then(status => { if (status.state === "granted" && !route.from) useMyLocation("from"); })
