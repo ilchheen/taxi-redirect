@@ -446,7 +446,14 @@ for (const which of ["from", "to"]) {
     render();
     input.select();
   };
-  // Leaving the field without picking a result puts the chosen point's address back.
+  // Clearing the field (backspace or ✕) removes the point.
+  input.oninput = () => {
+    if (!input.value.trim() && route[which]) {
+      route[which] = null;
+      render();
+    }
+  };
+  // Leaving the field after typing without picking a result puts the chosen point's address back.
   input.onblur = () => setTimeout(() => { if (document.activeElement !== input) render(); }, 300);
   slot.onsubmit = event => {
     event.preventDefault();
