@@ -1,0 +1,15 @@
+{
+  "name": "Taxi route",
+  "short_name": "Taxi",
+  "description": "Pick a start and a finish, open Uklon, Bolt, Uber or Opti with the route filled in.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#121212",
+  "theme_color": "#121212",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
