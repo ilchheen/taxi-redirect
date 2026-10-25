@@ -74,6 +74,7 @@
 <body>
 <main>
   <h1>🚕 Taxi route</h1>
+  <div class="chips" id="routes"></div>
 
   <section class="route">
     <!-- Each slot is also its search field: tap it, type an address, press Search on the keyboard. -->
@@ -107,7 +108,10 @@
     <a class="app uber off" data-app="uber">Uber</a>
     <a class="app opti off" data-app="opti">Opti</a>
   </section>
-  <button class="btn" id="share" hidden>🔗 Share route</button>
+  <div class="row" id="route-actions" hidden>
+    <button class="btn" id="save-route">🔁 Save route</button>
+    <button class="btn" id="share">🔗 Share route</button>
+  </div>
 </main>
 
 <div id="map-view" hidden>
@@ -217,21 +221,32 @@ const APP_LINKS = {
   }), "ua.otaxi.client"),
 };
 
-// ---------- Favorites (stored on this phone) ----------
+// ---------- Saved places and routes (stored on this phone) ----------
 const FAVORITES_KEY = "taxi.favorites";
+const ROUTES_KEY = "taxi.routes";
 
-function loadFavorites() {
-  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || []; } catch { return []; }
+function loadSaved(key) {
+  try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; }
 }
 
-function saveFavorites(items) {
-  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(items)); } catch { toast("Couldn't save favorites"); }
+function storeSaved(key, items) {
+  try { localStorage.setItem(key, JSON.stringify(items)); } catch { toast("Couldn't save"); }
+}
+
+// Saving under an existing name replaces that item.
+function addSaved(key, name, item) {
+  const items = loadSaved(key).filter(f => f.name !== name);
+  items.push({ name, ...item });
+  storeSaved(key, items);
 }
 
 function addFavorite(name, point) {
-  const items = loadFavorites().filter(f => f.name !== name);
-  items.push({ name, lat: point.lat, lng: point.lng, label: point.label });
-  saveFavorites(items);
+  addSaved(FAVORITES_KEY, name, { lat: point.lat, lng: point.lng, label: point.label });
+}
+
+function askName(example) {
+  const name = (prompt(`Name (e.g. ${example}):`, "") || "").trim().slice(0, 40);
+  return name || null;
 }
 
 // ---------- Links to this page ----------
@@ -321,31 +336,17 @@ function render() {
   }
   $("picker-title").textContent = active === "from" ? "Set start (A)" : "Set finish (B)";
 
-  const chips = loadFavorites().map((f, index) => {
-    const chip = document.createElement("button");
-    chip.className = "chip";
-    chip.textContent = "⭐ " + f.name;
-    if (editingFavorites) {
-      const del = document.createElement("span");
-      del.className = "del";
-      del.textContent = "✕";
-      chip.append(del);
-      chip.onclick = () => {
-        if (!confirm(`Delete «${f.name}»?`)) return;
-        const items = loadFavorites();
-        items.splice(index, 1);
-        saveFavorites(items);
-        render();
-      };
-    } else {
-      chip.onclick = () => setPoint(active, { lat: f.lat, lng: f.lng, label: f.label });
-    }
-    return chip;
+  const places = loadSaved(FAVORITES_KEY);
+  renderChips("favorites", FAVORITES_KEY, places, f => "⭐ " + f.name,
+    f => setPoint(active, { lat: f.lat, lng: f.lng, label: f.label }));
+  const routes = loadSaved(ROUTES_KEY);
+  renderChips("routes", ROUTES_KEY, routes, r => "🔁 " + r.name, r => {
+    route.from = r.from;
+    route.to = r.to;
+    setPoint("to", r.to);
   });
-  $("favorites").replaceChildren(...chips);
-  $("favorites").hidden = chips.length === 0;
-  $("edit-favorites").hidden = chips.length === 0 && !editingFavorites;
-  $("edit-favorites").textContent = editingFavorites ? "Done" : "Edit favorites";
+  $("edit-favorites").hidden = places.length + routes.length === 0 && !editingFavorites;
+  $("edit-favorites").textContent = editingFavorites ? "Done" : "Edit saved places and routes";
 
   const ready = route.from && route.to;
   for (const link of document.querySelectorAll("a.app")) {
@@ -353,7 +354,34 @@ function render() {
     if (ready) link.href = APP_LINKS[link.dataset.app](route.from, route.to);
     else link.removeAttribute("href");
   }
-  $("share").hidden = !ready;
+  $("route-actions").hidden = !ready;
+}
+
+// In edit mode a tap deletes the item instead of picking it.
+function renderChips(containerId, key, items, text, onPick) {
+  const chips = items.map((item, index) => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = text(item);
+    if (editingFavorites) {
+      const del = document.createElement("span");
+      del.className = "del";
+      del.textContent = "✕";
+      chip.append(del);
+      chip.onclick = () => {
+        if (!confirm(`Delete «${item.name}»?`)) return;
+        const current = loadSaved(key);
+        current.splice(index, 1);
+        storeSaved(key, current);
+        render();
+      };
+    } else {
+      chip.onclick = () => onPick(item);
+    }
+    return chip;
+  });
+  $(containerId).replaceChildren(...chips);
+  $(containerId).hidden = chips.length === 0;
 }
 
 let toastTimer;
@@ -460,11 +488,10 @@ for (const which of ["from", "to"]) {
     search(which, input.value.trim());
   };
   slot.querySelector(".star").onclick = () => {
-    const point = route[which];
-    const name = prompt("Name this place (e.g. Home, Work):", "");
-    if (!name || !name.trim()) return;
-    addFavorite(name.trim().slice(0, 40), point);
-    toast(`Saved «${name.trim().slice(0, 40)}»`);
+    const name = askName("Home, Work");
+    if (!name) return;
+    addFavorite(name, route[which]);
+    toast(`Saved «${name}»`);
     render();
   };
 }
@@ -510,6 +537,13 @@ $("map-locate").onclick = centerMapOnMe;
 $("map-ok").onclick = chooseMapPoint;
 $("edit-favorites").onclick = () => { editingFavorites = !editingFavorites; render(); };
 $("share").onclick = shareRoute;
+$("save-route").onclick = () => {
+  const name = askName("Home → Work");
+  if (!name) return;
+  addSaved(ROUTES_KEY, name, { from: route.from, to: route.to });
+  toast(`Saved route «${name}»`);
+  render();
+};
 window.addEventListener("popstate", () => { if (!$("map-view").hidden) closeMap(); });
 
 readHash();
