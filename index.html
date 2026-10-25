@@ -2,32 +2,461 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer">
-<title>Open taxi app</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#121212">
+<title>Taxi route</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
-  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-         font-family: system-ui, sans-serif; background: #111; color: #eee; }
-  a { display: block; padding: 18px 32px; border-radius: 14px; background: #2ecc71; color: #000;
-      font-size: 20px; font-weight: 600; text-decoration: none; }
+  :root {
+    --bg: #121212; --card: #1e1e1e; --line: #2c2c2c; --text: #f2f2f2; --muted: #9a9a9a;
+    --accent: #ffc800; --danger: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, -apple-system, sans-serif;
+         padding: max(12px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+  /* minmax(0, 1fr): a grid column otherwise grows to fit a long one-line address and pushes the page off-screen. */
+  main { max-width: 560px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  button, input, a.app { font: inherit; color: inherit; }
+  button { border: 0; cursor: pointer; }
+  h1 { font-size: 20px; margin: 4px 0; }
+
+  .route { background: var(--card); border-radius: 16px; padding: 6px; display: grid; grid-template-columns: minmax(0, 1fr);
+           gap: 6px; position: relative; }
+  .slot { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border-radius: 12px;
+          background: transparent; text-align: left; border: 2px solid transparent; min-height: 56px; }
+  .slot.active { border-color: var(--accent); }
+  .slot .tag { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+               background: var(--accent); color: #000; font-weight: 700; }
+  .slot .text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot .text.empty { color: var(--muted); }
+  .slot .star { flex: none; background: none; font-size: 20px; padding: 4px 6px; color: var(--muted); }
+  .swap { position: absolute; right: 52px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+          border-radius: 50%; background: var(--line); font-size: 18px; }
+
+  .picker { background: var(--card); border-radius: 16px; padding: 12px; display: grid; gap: 10px; }
+  .picker-title { color: var(--muted); font-size: 14px; }
+  form { display: flex; gap: 8px; }
+  input[type=search] { flex: 1; min-width: 0; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
+                       background: var(--bg); }
+  .btn { padding: 12px 14px; border-radius: 10px; background: var(--line); white-space: nowrap; }
+  .btn.primary { background: var(--accent); color: #000; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .results { display: grid; gap: 4px; }
+  .results button { text-align: left; padding: 10px 12px; border-radius: 10px; background: var(--bg); }
+  .note { color: var(--muted); font-size: 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 999px; background: var(--bg);
+          border: 1px solid var(--line); }
+  .chip .del { color: var(--danger); font-weight: 700; }
+  .link { background: none; color: var(--muted); font-size: 14px; padding: 0; text-decoration: underline; justify-self: start; }
+
+  .apps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  a.app { display: grid; place-items: center; padding: 18px 8px; border-radius: 14px; font-size: 18px; font-weight: 700;
+          text-decoration: none; }
+  a.app.off { opacity: .3; pointer-events: none; }
+  .uklon { background: #ffd400; color: #000 !important; }
+  .bolt { background: #34d186; color: #000 !important; }
+  .uber { background: #f2f2f2; color: #000 !important; }
+  .opti { background: #e94e3c; color: #fff !important; }
+
+  #map-view { position: fixed; inset: 0; z-index: 1000; background: var(--bg); display: flex; flex-direction: column; }
+  #map-view[hidden] { display: none; }
+  #map { flex: 1; }
+  .crosshair { position: absolute; left: 50%; top: calc(50% - 40px); width: 34px; height: 34px; margin: -34px 0 0 -17px;
+               z-index: 1001; pointer-events: none; font-size: 34px; line-height: 34px; text-align: center; }
+  .map-bar { display: grid; grid-template-columns: auto auto 1fr; gap: 8px; padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
+
+  .toast { position: fixed; left: 16px; right: 16px; bottom: 24px; z-index: 2000; margin: 0 auto; max-width: 520px;
+           background: #333; padding: 12px 16px; border-radius: 12px; text-align: center; }
+  .toast[hidden] { display: none; }
 </style>
 </head>
 <body>
-<a id="open" href="#">Open</a>
+<main>
+  <h1>🚕 Taxi route</h1>
+
+  <section class="route">
+    <div class="slot" id="slot-from" role="button" tabindex="0">
+      <span class="tag">A</span><span class="text empty">Where from?</span>
+      <button class="star" data-save="from" title="Save to favorites" aria-label="Save start to favorites">☆</button>
+    </div>
+    <div class="slot" id="slot-to" role="button" tabindex="0">
+      <span class="tag">B</span><span class="text empty">Where to?</span>
+      <button class="star" data-save="to" title="Save to favorites" aria-label="Save finish to favorites">☆</button>
+    </div>
+    <button class="swap" id="swap" title="Swap" aria-label="Swap start and finish">⇅</button>
+  </section>
+
+  <section class="picker">
+    <div class="picker-title" id="picker-title"></div>
+    <div class="chips" id="favorites"></div>
+    <form id="search-form">
+      <input id="query" type="search" placeholder="Address or place" enterkeyhint="search" autocomplete="off">
+      <button class="btn primary">Find</button>
+    </form>
+    <div class="results" id="results"></div>
+    <div class="row">
+      <button class="btn" id="here">📍 My location</button>
+      <button class="btn" id="open-map">🗺 On the map</button>
+    </div>
+    <button class="link" id="edit-favorites">Edit favorites</button>
+  </section>
+
+  <section class="apps" id="apps">
+    <a class="app uklon off" data-app="uklon">Uklon</a>
+    <a class="app bolt off" data-app="bolt">Bolt</a>
+    <a class="app uber off" data-app="uber">Uber</a>
+    <a class="app opti off" data-app="opti">Opti</a>
+  </section>
+</main>
+
+<div id="map-view" hidden>
+  <div id="map"></div>
+  <div class="crosshair">📍</div>
+  <div class="map-bar">
+    <button class="btn" id="map-cancel">Cancel</button>
+    <button class="btn" id="map-locate" aria-label="Go to my location">◎</button>
+    <button class="btn primary" id="map-ok">Choose this point</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
 <script>
-  // The bot puts the target app link after "#", so the route never reaches the server.
-  // Only Android intent links for the known taxi apps are allowed, so this page can't be used as an open redirect.
-  const params = new URLSearchParams(location.hash.slice(1));
-  const target = params.get("u") || "";
-  const appName = params.get("n") || "app";
-  const button = document.getElementById("open");
-  if (/^intent:\/\/[^#]*#Intent;scheme=(bolt|opti);package=(ee\.mtakso\.client|ua\.otaxi\.client);end$/.test(target)) {
-    button.href = target;
-    button.textContent = "Open " + appName;
-    location.replace(target);
-  } else {
-    button.textContent = "Invalid link";
+"use strict";
+
+// ---------- Places ----------
+// OpenStreetMap Nominatim, at most one request per second: searches run only on "Find", never per keystroke.
+const NOMINATIM = "https://nominatim.openstreetmap.org";
+// Kyiv bounding box: results inside it rank higher, results elsewhere in Ukraine still come back.
+const KYIV_VIEWBOX = "30.24,50.59,30.83,50.21";
+const KYIV_CENTER = [50.4501, 30.5234];
+
+function shortLabel(displayName) {
+  // "22, вулиця Хрещатик, Пасаж, Шевченківський район, Київ, 01001, Україна" -> "22, вулиця Хрещатик, Пасаж"
+  return displayName.split(", ").slice(0, 3).join(", ");
+}
+
+async function searchPlaces(query) {
+  const params = new URLSearchParams({
+    q: query, format: "jsonv2", countrycodes: "ua", "accept-language": "uk", viewbox: KYIV_VIEWBOX, limit: "6",
+  });
+  const response = await fetch(`${NOMINATIM}/search?${params}`);
+  if (!response.ok) throw new Error(`Search failed: ${response.status}`);
+  const byLabel = new Map();
+  for (const r of await response.json()) {
+    // Nominatim often returns the same building twice (address node and building outline).
+    const label = shortLabel(r.display_name);
+    if (!byLabel.has(label)) byLabel.set(label, { lat: +r.lat, lng: +r.lon, label });
   }
+  return [...byLabel.values()];
+}
+
+async function reverseGeocode(lat, lng) {
+  const fallback = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  try {
+    const params = new URLSearchParams({ lat, lon: lng, format: "jsonv2", "accept-language": "uk", zoom: "18" });
+    const response = await fetch(`${NOMINATIM}/reverse?${params}`);
+    if (!response.ok) return fallback;
+    const data = await response.json();
+    return data.display_name ? shortLabel(data.display_name) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function currentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error("No GPS in this browser"));
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
+      reject,
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 15000 },
+    );
+  });
+}
+
+// ---------- Taxi app links ----------
+// Formats come from each app's own deep-link handler (see ../README.md). Intent links name the package,
+// so Chrome opens that app directly, or Google Play if it isn't installed.
+function bracketQuery(params) {
+  // Keeps "[" and "]" in keys literal; Uklon reads the address by matching the raw key.
+  return Object.entries(params).map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&");
+}
+
+function intent(scheme, pathAndQuery, pkg) {
+  return `intent://${pathAndQuery}#Intent;scheme=${scheme};package=${pkg};end`;
+}
+
+const APP_LINKS = {
+  // Plain "/orders" opens the order history; only unknown paths fall through to the route parser.
+  uklon: (a, b) => intent("https", "uklon.com.ua/orders/route?" + bracketQuery({
+    action: "rideRequest",
+    "pickup[latitude]": a.lat, "pickup[longitude]": a.lng, "pickup[address]": a.label,
+    "dropoff[latitude]": b.lat, "dropoff[longitude]": b.lng, "dropoff[address]": b.label,
+  }), "com.uklontaxi"),
+  bolt: (a, b) => intent("bolt", "action/bookaride?" + bracketQuery({
+    pickup_latitude: a.lat, pickup_longitude: a.lng, pickup_formatted_address: a.label,
+    dropoff_latitude: b.lat, dropoff_longitude: b.lng, dropoff_formatted_address: b.label,
+  }), "ee.mtakso.client"),
+  uber: (a, b) => intent("https", "m.uber.com/ul/?" + bracketQuery({
+    action: "setPickup",
+    "pickup[latitude]": a.lat, "pickup[longitude]": a.lng, "pickup[nickname]": a.label,
+    "dropoff[latitude]": b.lat, "dropoff[longitude]": b.lng, "dropoff[nickname]": b.label,
+  }), "com.ubercab"),
+  opti: (a, b) => intent("opti", "route?" + bracketQuery({
+    action: "calculate_cost",
+    pickup_latitude: a.lat, pickup_longitude: a.lng, pickup_address: a.label,
+    dropoff_latitude: b.lat, dropoff_longitude: b.lng, dropoff_address: b.label,
+  }), "ua.otaxi.client"),
+};
+
+// ---------- Favorites (stored on this phone) ----------
+const FAVORITES_KEY = "taxi.favorites";
+
+function loadFavorites() {
+  try { return JSON.parse(localStorage.getItem(FAVORITES_KEY)) || []; } catch { return []; }
+}
+
+function saveFavorites(items) {
+  try { localStorage.setItem(FAVORITES_KEY, JSON.stringify(items)); } catch { toast("Couldn't save favorites"); }
+}
+
+function addFavorite(name, point) {
+  const items = loadFavorites().filter(f => f.name !== name);
+  items.push({ name, lat: point.lat, lng: point.lng, label: point.label });
+  saveFavorites(items);
+}
+
+// One-time import: "#import=<base64url JSON>". The part after "#" never leaves the phone.
+function importFromHash() {
+  const match = location.hash.match(/^#import=([A-Za-z0-9_-]+)$/);
+  if (!match) return;
+  history.replaceState(null, "", location.pathname);
+  try {
+    const bytes = Uint8Array.from(atob(match[1].replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const imported = JSON.parse(new TextDecoder().decode(bytes))
+      .filter(f => typeof f.name === "string" && Number.isFinite(f.lat) && Number.isFinite(f.lng));
+    imported.forEach(f => addFavorite(f.name, { lat: f.lat, lng: f.lng, label: String(f.label || f.name) }));
+    toast(`Imported ${imported.length} favorites`);
+  } catch {
+    toast("Import link is broken");
+  }
+}
+
+// ---------- UI state ----------
+const route = { from: null, to: null };
+let active = "from";
+let editingFavorites = false;
+const $ = id => document.getElementById(id);
+
+function setPoint(which, point) {
+  route[which] = point;
+  if (which === "from" && !route.to) active = "to";
+  else if (which === "to" && !route.from) active = "from";
+  $("results").replaceChildren();
+  $("query").value = "";
+  render();
+  if (route.from && route.to) $("apps").scrollIntoView({ behavior: "smooth", block: "end" });
+}
+
+function render() {
+  for (const which of ["from", "to"]) {
+    const slot = $(`slot-${which}`);
+    const text = slot.querySelector(".text");
+    const point = route[which];
+    text.textContent = point ? point.label : (which === "from" ? "Where from?" : "Where to?");
+    text.classList.toggle("empty", !point);
+    slot.classList.toggle("active", active === which);
+    slot.querySelector(".star").hidden = !point;
+  }
+  $("picker-title").textContent = active === "from" ? "Set start (A)" : "Set finish (B)";
+
+  const chips = loadFavorites().map((f, index) => {
+    const chip = document.createElement("button");
+    chip.className = "chip";
+    chip.textContent = "⭐ " + f.name;
+    if (editingFavorites) {
+      const del = document.createElement("span");
+      del.className = "del";
+      del.textContent = "✕";
+      chip.append(del);
+      chip.onclick = () => {
+        if (!confirm(`Delete «${f.name}»?`)) return;
+        const items = loadFavorites();
+        items.splice(index, 1);
+        saveFavorites(items);
+        render();
+      };
+    } else {
+      chip.onclick = () => setPoint(active, { lat: f.lat, lng: f.lng, label: f.label });
+    }
+    return chip;
+  });
+  $("favorites").replaceChildren(...chips);
+  $("favorites").hidden = chips.length === 0;
+  $("edit-favorites").hidden = chips.length === 0 && !editingFavorites;
+  $("edit-favorites").textContent = editingFavorites ? "Done" : "Edit favorites";
+
+  const ready = route.from && route.to;
+  for (const link of document.querySelectorAll("a.app")) {
+    link.classList.toggle("off", !ready);
+    if (ready) link.href = APP_LINKS[link.dataset.app](route.from, route.to);
+    else link.removeAttribute("href");
+  }
+}
+
+let toastTimer;
+function toast(message) {
+  const el = $("toast");
+  el.textContent = message;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
+async function useMyLocation(which) {
+  const slotText = $(`slot-${which}`).querySelector(".text");
+  slotText.textContent = "Locating…";
+  try {
+    const p = await currentPosition();
+    const label = await reverseGeocode(p.lat, p.lng);
+    setPoint(which, { lat: p.lat, lng: p.lng, label });
+    if (p.accuracy > 100) toast(`GPS accuracy is only ±${Math.round(p.accuracy)} m — check the point`);
+  } catch (error) {
+    render();
+    toast(error.code === 1 ? "Location access is off for this app" : "Couldn't get your location");
+  }
+}
+
+// ---------- Map ----------
+let map;
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  const css = document.createElement("link");
+  css.rel = "stylesheet";
+  css.href = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
+  document.head.append(css);
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Map didn't load"));
+    document.head.append(script);
+  });
+}
+
+async function openMap() {
+  try { await loadLeaflet(); } catch { return toast("Map didn't load — check the connection"); }
+  $("map-view").hidden = false;
+  // Lets the phone's Back button close the map instead of the app.
+  history.pushState({ map: true }, "");
+  const start = route[active] || route[active === "from" ? "to" : "from"];
+  if (!map) {
+    map = L.map("map", { zoomControl: false, attributionControl: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "© OpenStreetMap",
+    }).addTo(map);
+  }
+  map.invalidateSize();
+  if (start) map.setView([start.lat, start.lng], 17);
+  else {
+    map.setView(KYIV_CENTER, 12);
+    centerMapOnMe();
+  }
+}
+
+async function centerMapOnMe() {
+  try {
+    const p = await currentPosition();
+    map.setView([p.lat, p.lng], 17);
+  } catch {
+    toast("Couldn't get your location");
+  }
+}
+
+function closeMap() {
+  $("map-view").hidden = true;
+}
+
+async function chooseMapPoint() {
+  const { lat, lng } = map.getCenter();
+  const which = active;
+  history.back();
+  $(`slot-${which}`).querySelector(".text").textContent = "…";
+  setPoint(which, { lat, lng, label: await reverseGeocode(lat, lng) });
+}
+
+// ---------- Events ----------
+for (const which of ["from", "to"]) {
+  const slot = $(`slot-${which}`);
+  slot.onclick = () => { active = which; render(); $("query").focus({ preventScroll: true }); };
+  slot.querySelector(".star").onclick = event => {
+    event.stopPropagation();
+    const point = route[which];
+    const name = prompt("Name this place (e.g. Home, Work):", "");
+    if (!name || !name.trim()) return;
+    addFavorite(name.trim().slice(0, 40), point);
+    toast(`Saved «${name.trim().slice(0, 40)}»`);
+    render();
+  };
+}
+
+$("swap").onclick = () => {
+  [route.from, route.to] = [route.to, route.from];
+  render();
+};
+
+$("search-form").onsubmit = async event => {
+  event.preventDefault();
+  const query = $("query").value.trim();
+  if (!query) return;
+  $("query").blur();
+  const results = $("results");
+  results.replaceChildren(Object.assign(document.createElement("div"), { className: "note", textContent: "Searching…" }));
+  let places;
+  try {
+    places = await searchPlaces(query);
+  } catch {
+    results.replaceChildren(Object.assign(document.createElement("div"), {
+      className: "note", textContent: "Search failed — check the connection",
+    }));
+    return;
+  }
+  if (!places.length) {
+    results.replaceChildren(Object.assign(document.createElement("div"), {
+      className: "note", textContent: "Nothing found. Add the street type or city, or pick it on the map.",
+    }));
+    return;
+  }
+  const which = active;
+  results.replaceChildren(...places.map(place => {
+    const button = document.createElement("button");
+    button.textContent = place.label;
+    button.onclick = () => setPoint(which, place);
+    return button;
+  }));
+};
+
+$("here").onclick = () => useMyLocation(active);
+$("open-map").onclick = openMap;
+$("map-cancel").onclick = () => history.back();
+$("map-locate").onclick = centerMapOnMe;
+$("map-ok").onclick = chooseMapPoint;
+$("edit-favorites").onclick = () => { editingFavorites = !editingFavorites; render(); };
+window.addEventListener("popstate", () => { if (!$("map-view").hidden) closeMap(); });
+
+importFromHash();
+render();
+// The usual trip starts where you are; fill A from GPS if location access was already granted.
+navigator.permissions?.query({ name: "geolocation" })
+  .then(status => { if (status.state === "granted" && !route.from) useMyLocation("from"); })
+  .catch(() => {});
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
