@@ -22,7 +22,9 @@
   button { border: 0; cursor: pointer; }
   h1 { font-size: 20px; margin: 4px 0; }
 
-  .route { background: var(--card); border-radius: 16px; padding: 6px; display: grid; grid-template-columns: minmax(0, 1fr);
+  /* Right padding keeps a column for the swap button, so it never covers a slot's buttons. */
+  .route { background: var(--card); border-radius: 16px; padding: 6px 50px 6px 6px; display: grid;
+           grid-template-columns: minmax(0, 1fr);
            gap: 6px; position: relative; }
   .slot { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border-radius: 12px;
           background: transparent; text-align: left; border: 2px solid transparent; min-height: 56px; }
@@ -32,8 +34,14 @@
   .slot input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent;
                 text-overflow: ellipsis; }
   .slot input::placeholder { color: var(--muted); }
-  .slot .star { flex: none; background: none; font-size: 20px; padding: 4px 6px; color: var(--muted); }
-  .swap { position: absolute; right: 52px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+  .slot input::-webkit-search-cancel-button { display: none; }
+  .slot .star, .slot .clear { flex: none; width: 40px; height: 40px; margin: -8px -6px -8px 0; border-radius: 50%;
+                              background: none; font-size: 22px; color: var(--muted); }
+  /* While typing: a big clear button instead of the star. */
+  .slot .clear { display: none; }
+  .slot:focus-within .clear { display: block; }
+  .slot:focus-within .star { display: none; }
+  .swap { position: absolute; right: 7px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
           border-radius: 50%; background: var(--line); font-size: 18px; }
 
   .picker { background: var(--card); border-radius: 16px; padding: 12px; display: grid; gap: 10px; }
@@ -81,11 +89,13 @@
     <form class="slot" id="slot-from">
       <span class="tag">A</span>
       <input type="search" placeholder="Where from?" enterkeyhint="search" autocomplete="off" aria-label="Start">
+      <button type="button" class="clear" aria-label="Clear start">✕</button>
       <button type="button" class="star" title="Save to favorites" aria-label="Save start to favorites">☆</button>
     </form>
     <form class="slot" id="slot-to">
       <span class="tag">B</span>
       <input type="search" placeholder="Where to?" enterkeyhint="search" autocomplete="off" aria-label="Finish">
+      <button type="button" class="clear" aria-label="Clear finish">✕</button>
       <button type="button" class="star" title="Save to favorites" aria-label="Save finish to favorites">☆</button>
     </form>
     <button class="swap" id="swap" title="Swap" aria-label="Swap start and finish">⇅</button>
@@ -111,7 +121,8 @@
   <div class="row" id="route-actions" hidden>
     <button class="btn" id="save-route">🔁 Save route</button>
     <button class="btn" id="share">🔗 Share route</button>
-  </div>
+  </div>  <!-- Bump on every change, to tell whether the phone runs the latest upload. -->
+  <div class="note" style="text-align:center">Version 7</div>
 </main>
 
 <div id="map-view" hidden>
@@ -469,6 +480,16 @@ async function chooseMapPoint() {
 for (const which of ["from", "to"]) {
   const slot = $(`slot-${which}`);
   const input = slotInput(which);
+  const clear = slot.querySelector(".clear");
+  // Keep focus (and the keyboard) on the field when the button is tapped.
+  clear.onpointerdown = event => event.preventDefault();
+  clear.onclick = () => {
+    input.value = "";
+    route[which] = null;
+    $("results").replaceChildren();
+    render();
+    input.focus();
+  };
   input.onfocus = () => {
     active = which;
     render();
