@@ -29,17 +29,15 @@
   .slot.active { border-color: var(--accent); }
   .slot .tag { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
                background: var(--accent); color: #000; font-weight: 700; }
-  .slot .text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .slot .text.empty { color: var(--muted); }
+  .slot input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent;
+                text-overflow: ellipsis; }
+  .slot input::placeholder { color: var(--muted); }
   .slot .star { flex: none; background: none; font-size: 20px; padding: 4px 6px; color: var(--muted); }
   .swap { position: absolute; right: 52px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
           border-radius: 50%; background: var(--line); font-size: 18px; }
 
   .picker { background: var(--card); border-radius: 16px; padding: 12px; display: grid; gap: 10px; }
   .picker-title { color: var(--muted); font-size: 14px; }
-  form { display: flex; gap: 8px; }
-  input[type=search] { flex: 1; min-width: 0; padding: 12px; border-radius: 10px; border: 1px solid var(--line);
-                       background: var(--bg); }
   .btn { padding: 12px 14px; border-radius: 10px; background: var(--line); white-space: nowrap; }
   .btn.primary { background: var(--accent); color: #000; font-weight: 600; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -78,24 +76,23 @@
   <h1>🚕 Taxi route</h1>
 
   <section class="route">
-    <div class="slot" id="slot-from" role="button" tabindex="0">
-      <span class="tag">A</span><span class="text empty">Where from?</span>
-      <button class="star" data-save="from" title="Save to favorites" aria-label="Save start to favorites">☆</button>
-    </div>
-    <div class="slot" id="slot-to" role="button" tabindex="0">
-      <span class="tag">B</span><span class="text empty">Where to?</span>
-      <button class="star" data-save="to" title="Save to favorites" aria-label="Save finish to favorites">☆</button>
-    </div>
+    <!-- Each slot is also its search field: tap it, type an address, press Search on the keyboard. -->
+    <form class="slot" id="slot-from">
+      <span class="tag">A</span>
+      <input type="search" placeholder="Where from?" enterkeyhint="search" autocomplete="off" aria-label="Start">
+      <button type="button" class="star" title="Save to favorites" aria-label="Save start to favorites">☆</button>
+    </form>
+    <form class="slot" id="slot-to">
+      <span class="tag">B</span>
+      <input type="search" placeholder="Where to?" enterkeyhint="search" autocomplete="off" aria-label="Finish">
+      <button type="button" class="star" title="Save to favorites" aria-label="Save finish to favorites">☆</button>
+    </form>
     <button class="swap" id="swap" title="Swap" aria-label="Swap start and finish">⇅</button>
   </section>
 
   <section class="picker">
     <div class="picker-title" id="picker-title"></div>
     <div class="chips" id="favorites"></div>
-    <form id="search-form">
-      <input id="query" type="search" placeholder="Address or place" enterkeyhint="search" autocomplete="off">
-      <button class="btn primary">Find</button>
-    </form>
     <div class="results" id="results"></div>
     <div class="row">
       <button class="btn" id="here">📍 My location</button>
@@ -181,6 +178,11 @@ function currentPosition() {
 // ---------- Taxi app links ----------
 // Formats come from each app's own deep-link handler (see ../README.md). Intent links name the package,
 // so Chrome opens that app directly, or Google Play if it isn't installed.
+function formQuery(params) {
+  // Spaces as "+", like the bot's Python urlencode; Opti doesn't fill the route from "%20".
+  return new URLSearchParams(params).toString();
+}
+
 function bracketQuery(params) {
   // Keeps "[" and "]" in keys literal; Uklon reads the address by matching the raw key.
   return Object.entries(params).map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("&");
@@ -191,13 +193,14 @@ function intent(scheme, pathAndQuery, pkg) {
 }
 
 const APP_LINKS = {
+  // A verified App Link, so Android opens it in Uklon (its Play package isn't the code's com.uklontaxi).
   // Plain "/orders" opens the order history; only unknown paths fall through to the route parser.
-  uklon: (a, b) => intent("https", "uklon.com.ua/orders/route?" + bracketQuery({
+  uklon: (a, b) => "https://uklon.com.ua/orders/route?" + bracketQuery({
     action: "rideRequest",
     "pickup[latitude]": a.lat, "pickup[longitude]": a.lng, "pickup[address]": a.label,
     "dropoff[latitude]": b.lat, "dropoff[longitude]": b.lng, "dropoff[address]": b.label,
-  }), "com.uklontaxi"),
-  bolt: (a, b) => intent("bolt", "action/bookaride?" + bracketQuery({
+  }),
+  bolt: (a, b) => intent("bolt", "action/bookaride?" + formQuery({
     pickup_latitude: a.lat, pickup_longitude: a.lng, pickup_formatted_address: a.label,
     dropoff_latitude: b.lat, dropoff_longitude: b.lng, dropoff_formatted_address: b.label,
   }), "ee.mtakso.client"),
@@ -206,7 +209,7 @@ const APP_LINKS = {
     "pickup[latitude]": a.lat, "pickup[longitude]": a.lng, "pickup[nickname]": a.label,
     "dropoff[latitude]": b.lat, "dropoff[longitude]": b.lng, "dropoff[nickname]": b.label,
   }), "com.ubercab"),
-  opti: (a, b) => intent("opti", "route?" + bracketQuery({
+  opti: (a, b) => intent("opti", "route?" + formQuery({
     action: "calculate_cost",
     pickup_latitude: a.lat, pickup_longitude: a.lng, pickup_address: a.label,
     dropoff_latitude: b.lat, dropoff_longitude: b.lng, dropoff_address: b.label,
@@ -251,13 +254,14 @@ const route = { from: null, to: null };
 let active = "from";
 let editingFavorites = false;
 const $ = id => document.getElementById(id);
+const slotInput = which => $(`slot-${which}`).querySelector("input");
 
 function setPoint(which, point) {
   route[which] = point;
   if (which === "from" && !route.to) active = "to";
   else if (which === "to" && !route.from) active = "from";
   $("results").replaceChildren();
-  $("query").value = "";
+  document.activeElement?.blur();
   render();
   if (route.from && route.to) $("apps").scrollIntoView({ behavior: "smooth", block: "end" });
 }
@@ -265,10 +269,13 @@ function setPoint(which, point) {
 function render() {
   for (const which of ["from", "to"]) {
     const slot = $(`slot-${which}`);
-    const text = slot.querySelector(".text");
+    const input = slotInput(which);
     const point = route[which];
-    text.textContent = point ? point.label : (which === "from" ? "Where from?" : "Where to?");
-    text.classList.toggle("empty", !point);
+    // Don't overwrite what the user is typing.
+    if (document.activeElement !== input) {
+      input.value = point ? point.label : "";
+      input.scrollLeft = 0;  // Show the start of a long address, not where the cursor was.
+    }
     slot.classList.toggle("active", active === which);
     slot.querySelector(".star").hidden = !point;
   }
@@ -318,8 +325,7 @@ function toast(message) {
 }
 
 async function useMyLocation(which) {
-  const slotText = $(`slot-${which}`).querySelector(".text");
-  slotText.textContent = "Locating…";
+  slotInput(which).value = "Locating…";
   try {
     const p = await currentPosition();
     const label = await reverseGeocode(p.lat, p.lng);
@@ -386,16 +392,26 @@ async function chooseMapPoint() {
   const { lat, lng } = map.getCenter();
   const which = active;
   history.back();
-  $(`slot-${which}`).querySelector(".text").textContent = "…";
+  slotInput(which).value = "…";
   setPoint(which, { lat, lng, label: await reverseGeocode(lat, lng) });
 }
 
 // ---------- Events ----------
 for (const which of ["from", "to"]) {
   const slot = $(`slot-${which}`);
-  slot.onclick = () => { active = which; render(); $("query").focus({ preventScroll: true }); };
-  slot.querySelector(".star").onclick = event => {
-    event.stopPropagation();
+  const input = slotInput(which);
+  input.onfocus = () => {
+    active = which;
+    render();
+    input.select();
+  };
+  // Leaving the field without picking a result puts the chosen point's address back.
+  input.onblur = () => setTimeout(() => { if (document.activeElement !== input) render(); }, 300);
+  slot.onsubmit = event => {
+    event.preventDefault();
+    search(which, input.value.trim());
+  };
+  slot.querySelector(".star").onclick = () => {
     const point = route[which];
     const name = prompt("Name this place (e.g. Home, Work):", "");
     if (!name || !name.trim()) return;
@@ -410,11 +426,9 @@ $("swap").onclick = () => {
   render();
 };
 
-$("search-form").onsubmit = async event => {
-  event.preventDefault();
-  const query = $("query").value.trim();
+async function search(which, query) {
   if (!query) return;
-  $("query").blur();
+  slotInput(which).blur();
   const results = $("results");
   results.replaceChildren(Object.assign(document.createElement("div"), { className: "note", textContent: "Searching…" }));
   let places;
@@ -432,14 +446,14 @@ $("search-form").onsubmit = async event => {
     }));
     return;
   }
-  const which = active;
   results.replaceChildren(...places.map(place => {
     const button = document.createElement("button");
     button.textContent = place.label;
     button.onclick = () => setPoint(which, place);
     return button;
   }));
-};
+  results.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
 
 $("here").onclick = () => useMyLocation(active);
 $("open-map").onclick = openMap;
